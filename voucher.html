@@ -832,8 +832,11 @@ document.getElementById('printBtn').addEventListener('click', async () => {
   try{
     const res=await fetch('https://script.google.com/macros/s/AKfycbzhFy_qtNw6AT4I26n6X9_xnzTZ2y8OnydjGYE45nOlruoo_YQpzvv38DU7-w4ZANto/exec',{
       method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(data)
+      eaders:{
+  'Content-Type':'text/plain;charset=utf-8'
+},
+redirect:'follow',
+body:JSON.stringify(data)
     });
     let result={success:true};
     try{result=await res.json();}catch(_){}
