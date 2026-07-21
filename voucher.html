@@ -134,19 +134,37 @@
 
   .room-grid{
     display:grid;
-    grid-template-columns: 1fr 70px;
-    gap:8px;
+    grid-template-columns: 1fr 28px 54px 28px;
+    gap:6px;
     align-items:center;
     margin-bottom:6px;
   }
   .room-grid span{ font-size:13px; }
   .room-grid input{
-    padding:6px 8px;
+    padding:6px 4px;
     border:1px solid var(--line);
     border-radius:6px;
     text-align:center;
     font-family:inherit;
   }
+  .room-stepper-btn{
+    width:28px;
+    height:28px;
+    border:1px solid var(--line);
+    border-radius:6px;
+    background:#fdf9ee;
+    color:#3a3a3a;
+    font-size:16px;
+    line-height:1;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:0;
+    user-select:none;
+  }
+  .room-stepper-btn:hover{ background:#f7edd6; }
+  .room-stepper-btn:active{ background:#efe0bd; }
 
   .fixed-note{
     background:#fdf9ee;
@@ -520,11 +538,11 @@
       <div class="computed-box" id="totalRoomsDisplay">0</div>
     </div>
     <div id="roomTypes">
-      <div class="room-grid"><span>Double</span><input data-room="Double" class="digit-input" type="text" inputmode="numeric" pattern="[0-9]*" min="0" value="0"></div>
-      <div class="room-grid"><span>Twin</span><input data-room="Twin" class="digit-input" type="text" inputmode="numeric" pattern="[0-9]*" min="0" value="0"></div>
-      <div class="room-grid"><span>Triple</span><input data-room="Triple" class="digit-input" type="text" inputmode="numeric" pattern="[0-9]*" min="0" value="0"></div>
-      <div class="room-grid"><span>Suit</span><input data-room="Suit" class="digit-input" type="text" inputmode="numeric" pattern="[0-9]*" min="0" value="0"></div>
-      <div class="room-grid"><span>VIP Family Suit</span><input data-room="VIP Family Suit" class="digit-input" type="text" inputmode="numeric" pattern="[0-9]*" min="0" value="0"></div>
+      <div class="room-grid"><span>Double</span><button type="button" class="room-stepper-btn" data-step="-1">−</button><input data-room="Double" class="digit-input" type="text" inputmode="numeric" pattern="[0-9]*" min="0" value="0"><button type="button" class="room-stepper-btn" data-step="1">+</button></div>
+      <div class="room-grid"><span>Twin</span><button type="button" class="room-stepper-btn" data-step="-1">−</button><input data-room="Twin" class="digit-input" type="text" inputmode="numeric" pattern="[0-9]*" min="0" value="0"><button type="button" class="room-stepper-btn" data-step="1">+</button></div>
+      <div class="room-grid"><span>Triple</span><button type="button" class="room-stepper-btn" data-step="-1">−</button><input data-room="Triple" class="digit-input" type="text" inputmode="numeric" pattern="[0-9]*" min="0" value="0"><button type="button" class="room-stepper-btn" data-step="1">+</button></div>
+      <div class="room-grid"><span>Suit</span><button type="button" class="room-stepper-btn" data-step="-1">−</button><input data-room="Suit" class="digit-input" type="text" inputmode="numeric" pattern="[0-9]*" min="0" value="0"><button type="button" class="room-stepper-btn" data-step="1">+</button></div>
+      <div class="room-grid"><span>VIP Family Suit</span><button type="button" class="room-stepper-btn" data-step="-1">−</button><input data-room="VIP Family Suit" class="digit-input" type="text" inputmode="numeric" pattern="[0-9]*" min="0" value="0"><button type="button" class="room-stepper-btn" data-step="1">+</button></div>
     </div>
 
     <div class="field" style="margin-top:14px;">
@@ -769,6 +787,20 @@ function render() {
   }
 }
 
+document.querySelectorAll('.room-stepper-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const step = parseInt(btn.getAttribute('data-step'), 10);
+    const input = btn.parentElement.querySelector('input.digit-input');
+    if (!input) return;
+    let current = parseInt(input.value, 10);
+    if (isNaN(current)) current = 0;
+    let next = current + step;
+    if (next < 0) next = 0;
+    input.value = String(next);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+});
+
 document.querySelectorAll('.form-panel input').forEach(inp => {
   inp.addEventListener('input', () => {
     if (inp.classList.contains('digit-input')) sanitizeDigitsField(inp, true);
@@ -778,19 +810,30 @@ document.querySelectorAll('.form-panel input').forEach(inp => {
 
 document.getElementById('printBtn').addEventListener('click', async () => {
   render();
-  const data={
-    code:document.getElementById('qrCodeText').textContent.trim(),
-    check_in:document.getElementById('checkIn').value,
-    check_out:document.getElementById('prevCheckOut').textContent.trim(),
-    name:Array.from(document.querySelectorAll('.guest-name')).map(e=>e.value.trim()).filter(Boolean).join(', '),
-    room:(document.getElementById('room')?document.getElementById('room').value:'')
-  };
+  const data = {
+
+  code: document.getElementById('qrCodeText').textContent.trim(),
+
+  name: Array.from(document.querySelectorAll('.guest-name'))
+      .map(e => e.value.trim())
+      .filter(Boolean)
+      .join(', '),
+
+  passport: Array.from(document.querySelectorAll('.guest-id'))
+      .map(e => e.value.trim())
+      .filter(Boolean)
+      .join(', '),
+
+  check_in: document.getElementById('checkIn').value,
+
+  check_out: document.getElementById('prevCheckOut').textContent.trim()
+
+};
   try{
     const res=await fetch('https://script.google.com/macros/s/AKfycbzhFy_qtNw6AT4I26n6X9_xnzTZ2y8OnydjGYE45nOlruoo_YQpzvv38DU7-w4ZANto/exec',{
       method:'POST',
-      body:JSON.stringify(data),
-      redirect:'follow',
-      mode:'cors'
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(data)
     });
     let result={success:true};
     try{result=await res.json();}catch(_){}
