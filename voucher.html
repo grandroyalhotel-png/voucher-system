@@ -791,8 +791,10 @@ document.getElementById('printBtn').addEventListener('click', async () => {
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify(data)
     });
-    const result=await res.json();
-    if(result.success){window.print();} else {alert('ثبت اطلاعات در Google Sheet انجام نشد.');}
+    let result={success:true};
+    try{result=await res.json();}catch(_){}
+    window.print();
+    if(result.success!==true){console.warn('Sheet response',result);}
   }catch(e){console.error(e);alert('ارتباط با Google Sheet برقرار نشد.');}
 });
 
