@@ -493,6 +493,7 @@
   .cc-grid .cc-day.cc-selected{ background:var(--gold); color:#fff; font-weight:700; }
   .cc-grid .cc-today{ box-shadow: inset 0 0 0 1px var(--gold); }
 </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
 <body>
 
@@ -850,17 +851,39 @@ body:JSON.stringify(data)
     let result={success:true};
     try{result=await res.json();}catch(_){}
 
-    const originalTitle = document.title;
     const primaryGuestName = (document.querySelector('.guest-name')?.value || '').trim();
     const safeName = primaryGuestName
       .replace(/[\\/:*?"<>|]+/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
-    document.title = safeName ? `${safeName} - Voucher` : originalTitle;
+    const fileName = safeName ? `${safeName} - Voucher` : 'Voucher';
 
-    window.print();
+    // Use html2pdf for proper single-page PDF
+    const voucher = document.getElementById('voucher');
+    const opt = {
+      margin: 0,
+      filename: fileName + '.pdf',
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        width: 700,
+        height: 980
+      },
+      jsPDF: {
+        unit: 'px',
+        format: [700, 980],
+        orientation: 'portrait'
+      }
+    };
 
-    document.title = originalTitle;
+    if(typeof html2pdf !== 'undefined'){
+      html2pdf().set(opt).from(voucher).save();
+    } else {
+      // Fallback to print if html2pdf not loaded
+      window.print();
+    }
 
     if(result.success!==true){console.warn('Sheet response',result);}
   }catch(e){console.error(e);alert('ارتباط با Google Sheet برقرار نشد.');}
