@@ -491,8 +491,6 @@
   .cc-grid .cc-day.cc-selected{ background:var(--gold); color:#fff; font-weight:700; }
   .cc-grid .cc-today{ box-shadow: inset 0 0 0 1px var(--gold); }
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
 
@@ -850,59 +848,17 @@ body:JSON.stringify(data)
     let result={success:true};
     try{result=await res.json();}catch(_){}
 
+    const originalTitle = document.title;
     const primaryGuestName = (document.querySelector('.guest-name')?.value || '').trim();
-    const safeName = primaryGuestName.replace(/[\\/:*?"<>|]+/g,' ').replace(/\s+/g,' ').trim();
-    const fileName = (safeName ? `${safeName} - Voucher` : 'Voucher') + '.pdf';
+    const safeName = primaryGuestName
+      .replace(/[\\/:*?"<>|]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    document.title = safeName ? `${safeName} - Voucher` : originalTitle;
 
-    const btn = document.getElementById('printBtn');
-    btn.textContent = 'در حال ساخت PDF...';
-    btn.disabled = true;
+    window.print();
 
-    try {
-      const voucher = document.getElementById('voucher');
-      // Fix voucher to exact pixel size before capture
-      const vW = 700, vH = 980;
-      voucher.style.width = vW + 'px';
-      voucher.style.minHeight = vH + 'px';
-      voucher.style.height = vH + 'px';
-      voucher.style.overflow = 'hidden';
-
-      const canvas = await html2canvas(voucher, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-        width: vW,
-        height: vH,
-        windowWidth: vW,
-        windowHeight: vH
-      });
-
-      // Reset voucher styles
-      voucher.style.height = '';
-      voucher.style.overflow = '';
-
-      const imgData = canvas.toDataURL('image/jpeg', 0.95);
-      const { jsPDF } = window.jspdf;
-      const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
-      const pdfW = pdf.internal.pageSize.getWidth();
-      const pdfH = pdf.internal.pageSize.getHeight();
-      pdf.addImage(imgData, 'JPEG', 0, 0, pdfW, pdfH);
-
-      const pdfBlob = pdf.output('blob');
-      const blobUrl = URL.createObjectURL(pdfBlob);
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
-
-    } finally {
-      btn.textContent = 'Download / Print as PDF';
-      btn.disabled = false;
-    }
+    document.title = originalTitle;
 
     if(result.success!==true){console.warn('Sheet response',result);}
   }catch(e){console.error(e);alert('ارتباط با Google Sheet برقرار نشد.');}
