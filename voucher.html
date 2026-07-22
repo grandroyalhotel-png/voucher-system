@@ -851,48 +851,53 @@ body:JSON.stringify(data)
     try{result=await res.json();}catch(_){}
 
     const primaryGuestName = (document.querySelector('.guest-name')?.value || '').trim();
-    const safeName = primaryGuestName
-      .replace(/[\\/:*?"<>|]+/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
+    const safeName = primaryGuestName.replace(/[\\/:*?"<>|]+/g,' ').replace(/\s+/g,' ').trim();
     const fileName = (safeName ? `${safeName} - Voucher` : 'Voucher') + '.pdf';
 
-    const voucher = document.getElementById('voucher');
     const btn = document.getElementById('printBtn');
     btn.textContent = 'در حال ساخت PDF...';
     btn.disabled = true;
 
     try {
+      const voucher = document.getElementById('voucher');
+      // Fix voucher to exact pixel size before capture
+      const vW = 700, vH = 980;
+      voucher.style.width = vW + 'px';
+      voucher.style.minHeight = vH + 'px';
+      voucher.style.height = vH + 'px';
+      voucher.style.overflow = 'hidden';
+
       const canvas = await html2canvas(voucher, {
-        scale: 1.5,
+        scale: 2,
         useCORS: true,
         logging: false,
-        backgroundColor: '#ffffff'
+        backgroundColor: '#ffffff',
+        width: vW,
+        height: vH,
+        windowWidth: vW,
+        windowHeight: vH
       });
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.92);
+      // Reset voucher styles
+      voucher.style.height = '';
+      voucher.style.overflow = '';
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
       const { jsPDF } = window.jspdf;
       const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
       const pdfW = pdf.internal.pageSize.getWidth();
       const pdfH = pdf.internal.pageSize.getHeight();
       pdf.addImage(imgData, 'JPEG', 0, 0, pdfW, pdfH);
 
-      // Create blob and show download link (works better on mobile)
       const pdfBlob = pdf.output('blob');
       const blobUrl = URL.createObjectURL(pdfBlob);
-
-      // Remove old link if exists
-      const oldLink = document.getElementById('pdfDownloadLink');
-      if (oldLink) oldLink.remove();
-
       const link = document.createElement('a');
-      link.id = 'pdfDownloadLink';
       link.href = blobUrl;
       link.download = fileName;
-      link.textContent = '⬇ برای دانلود PDF اینجا بزن';
-      link.style.cssText = 'display:block;margin-top:12px;padding:12px;background:#2a9d5c;color:#fff;text-align:center;border-radius:8px;font-size:1rem;text-decoration:none;';
-      btn.parentNode.insertBefore(link, btn.nextSibling);
+      document.body.appendChild(link);
       link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
 
     } finally {
       btn.textContent = 'Download / Print as PDF';
