@@ -420,27 +420,24 @@
   .placeholder{ color:#b8ac8a; font-style:italic; }
 
   @media print{
-    @page{size:A4;margin:0}
-    html,body{margin:0!important;padding:0!important;width:210mm!important;height:297mm!important;overflow:hidden!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-    body *{visibility:hidden!important}
-    .voucher,.voucher *{visibility:visible!important}
-    .form-panel{display:none!important}
-    .preview-panel,.app{margin:0!important;padding:0!important;overflow:hidden!important;height:297mm!important}
+    @page{ size:A4; margin:0; }
+    html, body{ width:210mm; height:297mm; margin:0; padding:0; overflow:hidden; }
+    body *{ visibility:hidden; }
+    .voucher, .voucher *{ visibility:visible; }
+    .form-panel{ display:none !important; }
+    .preview-panel{ padding:0; margin:0; display:block; overflow:hidden; }
     .voucher{
-      position:fixed!important;
-      inset:0!important;
-      width:210mm!important;
-      height:297mm!important;
-      min-height:297mm!important;
-      max-height:297mm!important;
-      transform:none!important;
-      margin:0!important;
-      box-shadow:none!important;
-      overflow:hidden!important;
-      page-break-after:avoid!important;
-      page-break-inside:avoid!important;
+      position:absolute; top:0; left:0;
+      box-shadow:none;
+      width:700px;
+      min-height:980px;
+      margin:0;
+      overflow:hidden;
+      transform: scale(1.13386);
+      transform-origin: top left;
+      page-break-after: avoid;
+      page-break-inside: avoid;
     }
-}
     .app{ display:block; height:297mm; overflow:hidden; }
   }
 
