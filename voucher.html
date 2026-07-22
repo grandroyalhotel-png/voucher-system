@@ -267,6 +267,12 @@
     color:#8a7c58;
     margin-top:1px;
   }
+  .qr-area .qr-open-note{
+    font-size:9.5px;
+    color:#8a7c58;
+    font-style:italic;
+    margin-top:3px;
+  }
   .logo-badge{
     width:128px;
     height:128px;
@@ -575,6 +581,7 @@
         <img id="qrImg" alt="Scan to verify voucher">
         <div class="qr-label">Scan to verify</div>
         <div class="qr-code-text" id="qrCodeText"></div>
+        <div class="qr-open-note">Open with Chrome</div>
       </div>
       <div class="voucher-header">
         <div class="logo-badge"><img id="logoImg" alt="Grand Royal"></div>
@@ -832,7 +839,7 @@ document.getElementById('printBtn').addEventListener('click', async () => {
   try{
     const res=await fetch('https://script.google.com/macros/s/AKfycbzhFy_qtNw6AT4I26n6X9_xnzTZ2y8OnydjGYE45nOlruoo_YQpzvv38DU7-w4ZANto/exec',{
       method:'POST',
-      eaders:{
+      headers:{
   'Content-Type':'text/plain;charset=utf-8'
 },
 redirect:'follow',
@@ -840,7 +847,19 @@ body:JSON.stringify(data)
     });
     let result={success:true};
     try{result=await res.json();}catch(_){}
+
+    const originalTitle = document.title;
+    const primaryGuestName = (document.querySelector('.guest-name')?.value || '').trim();
+    const safeName = primaryGuestName
+      .replace(/[\\/:*?"<>|]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    document.title = safeName ? `${safeName} - Voucher` : originalTitle;
+
     window.print();
+
+    document.title = originalTitle;
+
     if(result.success!==true){console.warn('Sheet response',result);}
   }catch(e){console.error(e);alert('ارتباط با Google Sheet برقرار نشد.');}
 });
