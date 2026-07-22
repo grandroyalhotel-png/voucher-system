@@ -420,21 +420,22 @@
   .placeholder{ color:#b8ac8a; font-style:italic; }
 
   @media print{
-    @page{ size:A4; margin:0; }
+    @page{ size:A4 portrait; margin:0; }
     html, body{ width:210mm; height:297mm; margin:0; padding:0; overflow:hidden; }
     body *{ visibility:hidden; }
     .voucher, .voucher *{ visibility:visible; }
     .form-panel{ display:none !important; }
     .preview-panel{ padding:0; margin:0; display:block; overflow:hidden; }
     .voucher{
-      position:absolute; top:0; left:0;
+      position:fixed; top:0; left:0;
       box-shadow:none;
-      width:210mm;
-      height:297mm;
+      width:700px;
+      height:980px;
       min-height:unset;
+      max-height:980px;
       margin:0;
       overflow:hidden;
-      transform: none;
+      transform: scale(0.756);
       transform-origin: top left;
       page-break-after: avoid;
       page-break-inside: avoid;
