@@ -856,7 +856,7 @@ body:JSON.stringify(data)
       .trim();
     document.title = safeName ? `${safeName} - Voucher` : originalTitle;
 
-    window.print();
+    setTimeout(()=>window.print(),300);
 
     document.title = originalTitle;
 
