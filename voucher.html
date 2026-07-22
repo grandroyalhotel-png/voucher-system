@@ -420,22 +420,20 @@
   .placeholder{ color:#b8ac8a; font-style:italic; }
 
   @media print{
-    @page{ size:A4 portrait; margin:0; }
+    @page{ size:A4; margin:0; }
     html, body{ width:210mm; height:297mm; margin:0; padding:0; overflow:hidden; }
     body *{ visibility:hidden; }
     .voucher, .voucher *{ visibility:visible; }
     .form-panel{ display:none !important; }
     .preview-panel{ padding:0; margin:0; display:block; overflow:hidden; }
     .voucher{
-      position:fixed; top:0; left:0;
+      position:absolute; top:0; left:0;
       box-shadow:none;
       width:700px;
-      height:980px;
-      min-height:unset;
-      max-height:980px;
+      min-height:980px;
       margin:0;
       overflow:hidden;
-      transform: scale(0.756);
+      transform: scale(1.13386);
       transform-origin: top left;
       page-break-after: avoid;
       page-break-inside: avoid;
@@ -493,7 +491,7 @@
   .cc-grid .cc-day.cc-selected{ background:var(--gold); color:#fff; font-weight:700; }
   .cc-grid .cc-today{ box-shadow: inset 0 0 0 1px var(--gold); }
 </style>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
 <body>
 
@@ -856,34 +854,17 @@ body:JSON.stringify(data)
       .replace(/[\\/:*?"<>|]+/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
-    const fileName = safeName ? `${safeName} - Voucher` : 'Voucher';
+    const fileName = (safeName ? `${safeName} - Voucher` : 'Voucher') + '.pdf';
 
-    // Use html2pdf for proper single-page PDF
     const voucher = document.getElementById('voucher');
     const opt = {
       margin: 0,
-      filename: fileName + '.pdf',
+      filename: fileName,
       image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        width: 700,
-        height: 980
-      },
-      jsPDF: {
-        unit: 'px',
-        format: [700, 980],
-        orientation: 'portrait'
-      }
+      html2canvas: { scale: 2, useCORS: true, logging: false },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
     };
-
-    if(typeof html2pdf !== 'undefined'){
-      html2pdf().set(opt).from(voucher).save();
-    } else {
-      // Fallback to print if html2pdf not loaded
-      window.print();
-    }
+    html2pdf().set(opt).from(voucher).save();
 
     if(result.success!==true){console.warn('Sheet response',result);}
   }catch(e){console.error(e);alert('ارتباط با Google Sheet برقرار نشد.');}
