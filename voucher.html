@@ -223,7 +223,7 @@
     background-position: top left;
     background-size: 100% auto;
     box-shadow: 0 10px 40px rgba(0,0,0,.12);
-    padding: 255px 50px 95px;
+    padding: 222px 50px 95px;
     direction: ltr;
     font-family: 'Lora', serif;
     color: var(--ink);
@@ -237,7 +237,7 @@
     flex-direction:row;
     align-items:center;
     gap:26px;
-    margin-bottom:38px;
+    margin-bottom:10px;
     text-align:left;
   }
   .qr-area{
@@ -320,7 +320,7 @@
     align-items:baseline;
     font-family:'Lora', serif;
     font-size:18px;
-    margin-bottom:22px;
+    margin-bottom:12px;
   }
   .letter-title-row .title{ font-weight:700; }
   .letter-title-row .date{ color:#333; }
@@ -328,19 +328,19 @@
   .voucher p{
     font-family:'Lora', serif;
     font-size:18px;
-    line-height:1.9;
-    margin: 0 0 14px;
+    line-height:1.6;
+    margin: 0 0 10px;
   }
-  .voucher .label-strong{ font-weight:700; }
+  .voucher .label-strong{ font-weight:700; margin-bottom:4px; }
 
   .guest-list{
     font-family:'Lora', serif;
     font-size:16.5px;
-    margin: 4px 0 18px;
+    margin: 2px 0 8px;
     border-radius:8px;
-    padding:10px 14px;
+    padding:6px 14px;
     box-sizing:border-box;
-    min-height:110px;
+    min-height:70px;
   }
   .guest-list table{ height:100%; }
   .guest-list td{ vertical-align:top; }
@@ -351,10 +351,10 @@
   }
   .guest-item{
     box-sizing:border-box;
-    flex: 0 0 50%;
-    max-width:50%;
-    padding: 4px 8px 4px 0;
-    line-height:1.4;
+    flex: 0 0 100%;
+    max-width:100%;
+    padding: 2px 8px 2px 0;
+    line-height:1.3;
   }
   .guest-item.guest-item-full{
     flex: 0 0 100%;
@@ -369,12 +369,12 @@
   .rooms-block{
     font-family:'Lora', serif;
     font-size:16.5px;
-    margin-bottom:16px;
+    margin-bottom:6px;
     border-radius:8px;
-    padding:12px 14px;
+    padding:8px 14px;
     box-sizing:border-box;
   }
-  .rooms-block .total-rooms{ font-weight:700; margin-bottom:8px; }
+  .rooms-block .total-rooms{ font-weight:700; margin-bottom:4px; }
   .rooms-table{
     width:100%;
     border-collapse:collapse;
@@ -395,12 +395,12 @@
   .meta-block{
     font-family:'Lora', serif;
     font-size:16.5px;
-    margin-bottom:16px;
+    margin-bottom:10px;
     border-radius:8px;
-    padding:10px 14px;
+    padding:6px 14px;
     box-sizing:border-box;
   }
-  .meta-block div{ padding:3px 0; }
+  .meta-block div{ padding:1px 0; }
 
   .stamp-area{
     position:absolute;
@@ -673,6 +673,15 @@ document.getElementById('addGuestBtn').addEventListener('click', () => {
 // seed with one guest
 addGuestRow();
 
+function escapeHtmlText(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function toEnglishDigits(str) {
   if (str === null || str === undefined) return str;
   const persian = '۰۱۲۳۴۵۶۷۸۹';
@@ -702,7 +711,13 @@ function sanitizeDigitsField(el, digitsOnly) {
 // everywhere: DD.MM.YYYY. Internally, dates are converted to ISO (YYYY-MM-DD)
 // only for calculations, then converted back to DD.MM.YYYY for display.
 function isValidDot(v) {
-  return /^\d{2}\.\d{2}\.\d{4}$/.test(v || '');
+  if (!/^\d{2}\.\d{2}\.\d{4}$/.test(v || '')) return false;
+  const [d, m, y] = v.split('.').map(Number);
+  if (m < 1 || m > 12) return false;
+  if (d < 1 || d > 31) return false;
+  // roundtrip through Date to reject calendar-invalid combos like 31.04
+  const check = new Date(y, m - 1, d);
+  return check.getFullYear() === y && check.getMonth() === m - 1 && check.getDate() === d;
 }
 function isValidIso(v) {
   return /^\d{4}-\d{2}-\d{2}$/.test(v || '');
@@ -761,8 +776,10 @@ function render() {
   } else {
     const items = [];
     rows.forEach((row, idx) => {
-      const name = row.querySelector('.guest-name').value || `[Guest ${idx+1} name]`;
-      const id = toEnglishDigits(row.querySelector('.guest-id').value) || '[ID]';
+      const rawName = row.querySelector('.guest-name').value || `[Guest ${idx+1} name]`;
+      const rawId = toEnglishDigits(row.querySelector('.guest-id').value) || '[ID]';
+      const name = escapeHtmlText(rawName);
+      const id = escapeHtmlText(rawId);
       const div = document.createElement('div');
       div.className = 'guest-item';
       div.innerHTML = `<span class="guest-num">${idx+1})</span> ${name} (${id})`;
@@ -779,7 +796,14 @@ function render() {
     });
   }
 
-  const totalGuestsVal = rows.length;
+  // Only count guest rows that actually have a name or ID filled in,
+  // so this number always matches what actually gets submitted/printed
+  // (an empty "+ Add guest" row left blank should not inflate the count).
+  const totalGuestsVal = Array.from(rows).filter(row => {
+    const n = row.querySelector('.guest-name').value.trim();
+    const i = row.querySelector('.guest-id').value.trim();
+    return n || i;
+  }).length;
   document.getElementById('totalGuestsDisplay').textContent = totalGuestsVal;
   document.getElementById('prevTotalGuests').textContent = totalGuestsVal;
   document.getElementById('prevServiceType').textContent = document.getElementById('serviceType').value || '[service type]';
@@ -851,6 +875,11 @@ document.querySelectorAll('.room-stepper-btn').forEach(btn => {
 document.querySelectorAll('.form-panel input').forEach(inp => {
   inp.addEventListener('input', () => {
     if (inp.classList.contains('digit-input')) sanitizeDigitsField(inp, true);
+    // Date fields (DD.MM.YYYY) must keep the dots, so only convert any
+    // Persian/Arabic-Indic digits a mobile keyboard might type to English
+    // digits - without this, isValidDot()/dotToIso() silently fail and the
+    // date picker/checkout calculation stop working on phones.
+    if (inp.classList.contains('date-text-input')) sanitizeDigitsField(inp, false);
     render();
   });
 });
@@ -929,6 +958,15 @@ function toggleCustomCalendar(fieldId) {
   if (cal.classList.contains('show')) { closeCustomCalendar(); return; }
   closeCustomCalendar();
 
+  // On mobile, if the on-screen keyboard is open (e.g. the user was just
+  // typing in a text field), it shrinks the visible viewport and can push
+  // the calendar below the visible area, making it look like it "doesn't
+  // open" even though it technically did. Blurring first lets the keyboard
+  // close before we measure/position anything.
+  if (document.activeElement && document.activeElement.blur) {
+    document.activeElement.blur();
+  }
+
   const input = document.getElementById(fieldId);
   const iso = dotToIso(input.value);
   const base = iso ? new Date(iso + 'T00:00:00') : new Date();
@@ -937,11 +975,27 @@ function toggleCustomCalendar(fieldId) {
 
   document.body.appendChild(cal); // detach so it can never be clipped by a scrolling ancestor
   renderCalendarGrid(fieldId, cal);
+  cal.classList.add('show'); // must be visible before measuring its size below
 
+  // Position under the field, then clamp so the calendar always stays fully
+  // inside the viewport - otherwise, on a small phone screen, it can end up
+  // positioned partly or fully off-screen (invisible) and look broken.
   const rect = input.getBoundingClientRect();
-  cal.style.top = (rect.bottom + 6) + 'px';
-  cal.style.left = rect.left + 'px';
-  cal.classList.add('show');
+  const margin = 8;
+  let top = rect.bottom + 6;
+  let left = rect.left;
+  const calWidth = cal.offsetWidth || 240;
+  const calHeight = cal.offsetHeight || 260;
+  const maxLeft = window.innerWidth - calWidth - margin;
+  const maxTop = window.innerHeight - calHeight - margin;
+  if (left > maxLeft) left = Math.max(margin, maxLeft);
+  if (left < margin) left = margin;
+  if (top > maxTop) {
+    // Not enough room below the field - open upward above it instead.
+    top = Math.max(margin, rect.top - calHeight - 6);
+  }
+  cal.style.top = top + 'px';
+  cal.style.left = left + 'px';
   ccOpenFor = fieldId;
 }
 
