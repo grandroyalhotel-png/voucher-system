@@ -526,9 +526,29 @@
     min-height:0 !important;
   }
 }
+
+/* ---------- "PDF ready" share sheet ---------- */
+#pdfSheet{position:fixed;inset:0;z-index:100000;display:none;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.45);}
+#pdfSheet .sheet-box{width:min(100%,460px);background:#fff;border-radius:18px 18px 0 0;padding:20px 18px 26px;box-shadow:0 -10px 40px rgba(0,0,0,.25);text-align:center;}
+#pdfSheet .sheet-title{font-size:17px;font-weight:700;color:#1c1a15;margin-bottom:4px;}
+#pdfSheet .sheet-name{font-size:12.5px;color:#7a7462;margin-bottom:16px;word-break:break-word;}
+#pdfSheet button{display:block;width:100%;margin-top:10px;padding:14px;font-size:15px;font-weight:600;border:0;border-radius:12px;cursor:pointer;font-family:inherit;}
+#pdfSheet .btn-share{background:#25a244;color:#fff;}
+#pdfSheet .btn-save{background:#1c1a15;color:#f5ecd8;}
+#pdfSheet .btn-close{background:#eee8d6;color:#4a4638;}
+@media print{#pdfSheet{display:none !important;}}
 </style>
 </head>
 <body>
+<div id="pdfSheet">
+  <div class="sheet-box">
+    <div class="sheet-title">PDF ready / فایل PDF آماده است</div>
+    <div class="sheet-name" id="pdfSheetName"></div>
+    <button type="button" class="btn-share" id="pdfShareBtn">Send via WhatsApp / Telegram / other apps<br>ارسال با واتس‌اپ، تلگرام و ...</button>
+    <button type="button" class="btn-save" id="pdfSaveBtn">Save to phone / ذخیره در گوشی</button>
+    <button type="button" class="btn-close" id="pdfCloseBtn">Close / بستن</button>
+  </div>
+</div>
 <div id="lockScreen">
   <div class="lock-box">
     <h2>Grand Royal · Voucher</h2>
@@ -3458,16 +3478,38 @@ async function makePdf(fileBaseName) {
   pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', (d.w - w) / 2, 0, w, h);
 
   const fileName = (fileBaseName || 'Voucher') + '.pdf';
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  if (isIOS && navigator.canShare) {
-    const file = new File([pdf.output('blob')], fileName, { type: 'application/pdf' });
-    if (navigator.canShare({ files: [file] })) {
-      try { await navigator.share({ files: [file], title: fileName }); return; }
-      catch (e) { if (e && e.name === 'AbortError') return; /* otherwise fall back to save */ }
+  const file = new File([pdf.output('blob')], fileName, { type: 'application/pdf' });
+  const canShareFile = !!(navigator.canShare && navigator.share && navigator.canShare({ files: [file] }));
+
+  if (!canShareFile) {          // e.g. a computer: just download the file
+    pdf.save(fileName);
+    return;
+  }
+  // Phone/tablet: show a sheet so the person can send the file to any app (a fresh tap is
+  // required by the browser before it opens the phone's share menu)
+  pendingPdf = { pdf, file, fileName };
+  document.getElementById('pdfSheetName').textContent = fileName;
+  document.getElementById('pdfSheet').style.display = 'flex';
+}
+
+let pendingPdf = null;
+function closePdfSheet() { document.getElementById('pdfSheet').style.display = 'none'; }
+document.getElementById('pdfCloseBtn').addEventListener('click', closePdfSheet);
+document.getElementById('pdfSheet').addEventListener('click', (e) => { if (e.target.id === 'pdfSheet') closePdfSheet(); });
+document.getElementById('pdfSaveBtn').addEventListener('click', () => {
+  if (pendingPdf) pendingPdf.pdf.save(pendingPdf.fileName);
+});
+document.getElementById('pdfShareBtn').addEventListener('click', async () => {
+  if (!pendingPdf) return;
+  try {
+    await navigator.share({ files: [pendingPdf.file], title: pendingPdf.fileName });
+  } catch (e) {
+    if (e && e.name !== 'AbortError') {
+      console.error(e);
+      alert('ارسال انجام نشد؛ از «ذخیره در گوشی» استفاده کنید. / Sharing failed, please use Save instead.');
     }
   }
-  pdf.save(fileName);
-}
+});
 
 /* ---- Custom date picker: always Gregorian/English, regardless of OS calendar ---- */
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
