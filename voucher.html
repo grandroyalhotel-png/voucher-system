@@ -512,6 +512,20 @@
 #lockScreen button:disabled{opacity:.6;cursor:default;}
 #lockScreen .lock-msg{min-height:20px;margin-top:10px;font-size:13px;color:#b3261e;}
 @media print{#lockScreen{display:none!important;}}
+
+/* ---------- Single-page print layout (A4 / A5) ---------- */
+@media print{
+  html,body{height:auto !important;overflow:visible !important;background:#fff !important;width:auto !important;}
+  .app,.preview-panel{height:auto !important;overflow:visible !important;}
+  .voucher{
+    transform:scale(var(--print-scale,1.13386)) !important;
+    transform-origin:top left !important;
+    left:var(--print-left,0px) !important;
+    top:0 !important;
+    height:var(--print-h,980px) !important;
+    min-height:0 !important;
+  }
+}
 </style>
 </head>
 <body>
@@ -603,7 +617,16 @@
       <label for="qrToggle" style="margin:0; cursor:pointer;">Print QR code on voucher</label>
     </div>
 
-    <button class="print-btn" id="printBtn">Download / Print as PDF</button>
+    <div class="field" style="margin-top:18px;">
+      <label for="pageSize">Paper size</label>
+      <select id="pageSize">
+        <option value="A4">A4</option>
+        <option value="A5">A5</option>
+      </select>
+    </div>
+
+    <button class="print-btn" id="pdfBtn" style="margin-top:8px;">Download PDF</button>
+    <button class="print-btn" id="printBtn" style="margin-top:8px;background:#5c4a12;">Print</button>
   </div>
 
   <!-- PREVIEW -->
@@ -658,6 +681,8 @@
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
 let guestCount = 0;
 const guestListEl = document.getElementById('guestList');
@@ -917,7 +942,7 @@ function getStaffKey() {
   return k;
 }
 
-document.getElementById('printBtn').addEventListener('click', async () => {
+async function issueVoucher(mode) {
   render();
 
   const staffKey = getStaffKey();
@@ -983,13 +1008,138 @@ body:JSON.stringify(data)
       .trim();
     document.title = safeName ? `${safeName} - Voucher` : originalTitle;
 
-    window.print();
+    if (mode === 'pdf') {
+      try {
+        await makePdf(safeName ? `${safeName} - Voucher` : 'Voucher');
+      } catch (e) {
+        console.error(e);
+        alert('ساخت PDF انجام نشد؛ از دکمه Print استفاده کنید. / PDF could not be created, please use Print instead.');
+      }
+    } else {
+      applyPageLayout();
+      window.print();
+    }
 
     document.title = originalTitle;
 
     if(result.success!==true){console.warn('Sheet response',result);}
   }catch(e){console.error(e);alert('ارتباط با Google Sheet برقرار نشد.');}
-});
+}
+
+document.getElementById('pdfBtn').addEventListener('click', () => issueVoucher('pdf'));
+document.getElementById('printBtn').addEventListener('click', () => issueVoucher('print'));
+
+/* ---------- Paper size (A4 / A5), one-page print and PDF ---------- */
+const PAGE_DIMS = { A4: { w: 210, h: 297 }, A5: { w: 148, h: 210 } };
+function mmToPx(mm) { return mm / 25.4 * 96; }
+function currentPageSize() {
+  const el = document.getElementById('pageSize');
+  return el && el.value === 'A5' ? 'A5' : 'A4';
+}
+(function restorePageSize() {
+  try {
+    const saved = localStorage.getItem('grPageSize');
+    const el = document.getElementById('pageSize');
+    if (el && (saved === 'A4' || saved === 'A5')) el.value = saved;
+    if (el) el.addEventListener('change', () => { try { localStorage.setItem('grPageSize', el.value); } catch (_) {} });
+  } catch (_) {}
+})();
+
+// Height of the voucher laid out at its real 700px width (independent of the phone screen width)
+function measureVoucherHeight() {
+  const v = document.getElementById('voucher');
+  const c = v.cloneNode(true);
+  c.style.cssText = 'position:absolute;left:-10000px;top:0;width:700px;max-width:none;min-height:980px;transform:none;visibility:hidden;';
+  document.body.appendChild(c);
+  const h = Math.ceil(c.getBoundingClientRect().height);
+  c.remove();
+  return Math.max(h, 980);
+}
+
+// Sets the paper size and shrinks the voucher (if needed) so it always fits ONE page
+function applyPageLayout() {
+  const size = currentPageSize();
+  const d = PAGE_DIMS[size];
+  const pw = mmToPx(d.w), ph = mmToPx(d.h);
+  const H = measureVoucherHeight();
+  let scale = Math.min(pw / 700, ph / H) * 0.995;
+  scale = Math.floor(scale * 1000) / 1000;
+  const left = Math.max(0, (pw - 700 * scale) / 2);
+  const root = document.documentElement.style;
+  root.setProperty('--print-scale', String(scale));
+  root.setProperty('--print-left', left + 'px');
+  root.setProperty('--print-h', H + 'px');
+  let st = document.getElementById('dynPageStyle');
+  if (!st) { st = document.createElement('style'); st.id = 'dynPageStyle'; document.head.appendChild(st); }
+  st.textContent = '@page{size:' + size + ' portrait;margin:0;}';
+}
+window.addEventListener('beforeprint', () => { try { applyPageLayout(); } catch (_) {} });
+
+function blobToDataURL(blob) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result);
+    fr.onerror = reject;
+    fr.readAsDataURL(blob);
+  });
+}
+
+// Builds a real one-page PDF (A4 or A5) and saves / shares it
+async function makePdf(fileBaseName) {
+  if (!window.html2canvas || !window.jspdf) throw new Error('PDF libraries not loaded');
+  if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (_) {} }
+
+  const size = currentPageSize();
+  const d = PAGE_DIMS[size];
+  const v = document.getElementById('voucher');
+
+  // Embed the QR image as data so the canvas is not blocked by cross-site rules
+  let qrData = null;
+  const qrArea = document.querySelector('.qr-area');
+  const qrImg = document.getElementById('qrImg');
+  const qrVisible = qrArea && getComputedStyle(qrArea).display !== 'none';
+  if (qrVisible && qrImg && /^https?:/i.test(qrImg.src)) {
+    const r = await fetch(qrImg.src, { mode: 'cors' });
+    if (!r.ok) throw new Error('QR fetch failed');
+    qrData = await blobToDataURL(await r.blob());
+  }
+
+  const canvas = await html2canvas(v, {
+    scale: 2,
+    useCORS: true,
+    backgroundColor: '#ffffff',
+    logging: false,
+    windowWidth: 1200,
+    onclone: (doc) => {
+      const cv = doc.getElementById('voucher');
+      if (cv) {
+        cv.style.width = '700px';
+        cv.style.maxWidth = 'none';
+        cv.style.boxShadow = 'none';
+        cv.style.transform = 'none';
+      }
+      const img = doc.getElementById('qrImg');
+      if (img && qrData) img.src = qrData;
+    }
+  });
+
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ unit: 'mm', format: size.toLowerCase(), orientation: 'portrait', compress: true });
+  const ratio = Math.min(d.w / canvas.width, d.h / canvas.height);
+  const w = canvas.width * ratio, h = canvas.height * ratio;
+  pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', (d.w - w) / 2, 0, w, h);
+
+  const fileName = (fileBaseName || 'Voucher') + '.pdf';
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (isIOS && navigator.canShare) {
+    const file = new File([pdf.output('blob')], fileName, { type: 'application/pdf' });
+    if (navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: fileName }); return; }
+      catch (e) { if (e && e.name === 'AbortError') return; /* otherwise fall back to save */ }
+    }
+  }
+  pdf.save(fileName);
+}
 
 /* ---- Custom date picker: always Gregorian/English, regardless of OS calendar ---- */
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
