@@ -884,8 +884,23 @@ document.querySelectorAll('.form-panel input').forEach(inp => {
   });
 });
 
+// Staff access key: typed once on this computer, kept only in this browser
+// (never written in the page source, so it is not exposed on GitHub).
+function getStaffKey() {
+  let k = '';
+  try { k = localStorage.getItem('grStaffKey') || ''; } catch (_) {}
+  if (!k) {
+    k = (prompt('Staff access key / کلید دسترسی کارکنان:') || '').trim();
+    if (k) { try { localStorage.setItem('grStaffKey', k); } catch (_) {} }
+  }
+  return k;
+}
+
 document.getElementById('printBtn').addEventListener('click', async () => {
   render();
+
+  const staffKey = getStaffKey();
+  if (!staffKey) { alert('برای صدور واچر، کلید دسترسی لازم است.'); return; }
 
   // One entry per guest (paired by their row, not just filtered/joined),
   // so the sheet can put each guest in their own row while sharing the
@@ -896,6 +911,8 @@ document.getElementById('printBtn').addEventListener('click', async () => {
   })).filter(g => g.name || g.passport);
 
   const data = {
+
+  key: staffKey,
 
   code: document.getElementById('qrCodeText').textContent.trim(),
 
@@ -924,6 +941,18 @@ body:JSON.stringify(data)
     });
     let result={success:true};
     try{result=await res.json();}catch(_){}
+
+    if(result.success!==true){
+      if(result.message==='Unauthorized'){
+        try{localStorage.removeItem('grStaffKey');}catch(_){}
+        alert('کلید دسترسی اشتباه است. دوباره روی دکمه بزنید و کلید درست را وارد کنید.');
+      }else if(result.message==='Too many attempts'){
+        alert('تعداد تلاش‌های ناموفق زیاد بود. چند دقیقه بعد دوباره امتحان کنید.');
+      }else{
+        alert('واچر در Google Sheet ذخیره نشد: '+(result.message||''));
+      }
+      return;
+    }
 
     const originalTitle = document.title;
     const primaryGuestName = (document.querySelector('.guest-name')?.value || '').trim();
