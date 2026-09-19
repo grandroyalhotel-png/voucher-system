@@ -526,29 +526,9 @@
     min-height:0 !important;
   }
 }
-
-/* ---------- "PDF ready" share sheet ---------- */
-#pdfSheet{position:fixed;inset:0;z-index:100000;display:none;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.45);}
-#pdfSheet .sheet-box{width:min(100%,460px);background:#fff;border-radius:18px 18px 0 0;padding:20px 18px 26px;box-shadow:0 -10px 40px rgba(0,0,0,.25);text-align:center;}
-#pdfSheet .sheet-title{font-size:17px;font-weight:700;color:#1c1a15;margin-bottom:4px;}
-#pdfSheet .sheet-name{font-size:12.5px;color:#7a7462;margin-bottom:16px;word-break:break-word;}
-#pdfSheet button{display:block;width:100%;margin-top:10px;padding:14px;font-size:15px;font-weight:600;border:0;border-radius:12px;cursor:pointer;font-family:inherit;}
-#pdfSheet .btn-share{background:#25a244;color:#fff;}
-#pdfSheet .btn-save{background:#1c1a15;color:#f5ecd8;}
-#pdfSheet .btn-close{background:#eee8d6;color:#4a4638;}
-@media print{#pdfSheet{display:none !important;}}
 </style>
 </head>
 <body>
-<div id="pdfSheet">
-  <div class="sheet-box">
-    <div class="sheet-title">PDF ready / فایل PDF آماده است</div>
-    <div class="sheet-name" id="pdfSheetName"></div>
-    <button type="button" class="btn-share" id="pdfShareBtn">Send via WhatsApp / Telegram / other apps<br>ارسال با واتس‌اپ، تلگرام و ...</button>
-    <button type="button" class="btn-save" id="pdfSaveBtn">Save to phone / ذخیره در گوشی</button>
-    <button type="button" class="btn-close" id="pdfCloseBtn">Close / بستن</button>
-  </div>
-</div>
 <div id="lockScreen">
   <div class="lock-box">
     <h2>Grand Royal · Voucher</h2>
@@ -646,7 +626,16 @@
     </div>
 
     <button class="print-btn" id="pdfBtn" style="margin-top:8px;">Download PDF</button>
+
+    <div id="pdfInline" style="display:none;">
+      <div id="pdfInlineName" style="font-size:11.5px;color:#7a7462;margin:10px 2px 0;text-align:center;word-break:break-word;"></div>
+      <div id="pdfInlineNote" style="display:none;background:#fff4d6;color:#7a5a00;border-radius:8px;padding:9px;font-size:12px;margin-top:8px;"></div>
+      <button type="button" class="print-btn" id="pdfShareBtn" style="margin-top:8px;background:#25a244;">Send PDF to WhatsApp / Telegram / ... &nbsp;|&nbsp; ارسال</button>
+      <button type="button" class="print-btn" id="pdfSaveBtn" style="margin-top:8px;">Save to phone &nbsp;|&nbsp; ذخیره در گوشی</button>
+      <button type="button" class="print-btn" id="pdfCloseBtn" style="margin-top:8px;background:#eee8d6;color:#4a4638;">Back &nbsp;|&nbsp; بازگشت</button>
+    </div>
     <button class="print-btn" id="printBtn" style="margin-top:8px;background:#5c4a12;">Print</button>
+    <div id="buildTag" style="text-align:center;font-size:11px;color:#a59d85;margin-top:12px;"></div>
   </div>
 
   <!-- PREVIEW -->
@@ -3357,8 +3346,10 @@ body:JSON.stringify(data)
     document.title = safeName ? `${safeName} - Voucher` : originalTitle;
 
     if (mode === 'pdf') {
+      const keepY = window.scrollY || 0;
       try {
         await makePdf(safeName ? `${safeName} - Voucher` : 'Voucher');
+        window.scrollTo(0, keepY);
       } catch (e) {
         console.error(e);
         alert('ساخت PDF انجام نشد؛ از دکمه Print استفاده کنید. / PDF could not be created, please use Print instead.');
@@ -3479,23 +3470,47 @@ async function makePdf(fileBaseName) {
 
   const fileName = (fileBaseName || 'Voucher') + '.pdf';
   const file = new File([pdf.output('blob')], fileName, { type: 'application/pdf' });
-  const canShareFile = !!(navigator.canShare && navigator.share && navigator.canShare({ files: [file] }));
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  let canShareFile = false;
+  try {
+    canShareFile = !!(navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] })));
+  } catch (_) { canShareFile = false; }
 
-  if (!canShareFile) {          // e.g. a computer: just download the file
+  if (!isMobile && !canShareFile) {   // a computer: just download the file
     pdf.save(fileName);
     return;
   }
-  // Phone/tablet: show a sheet so the person can send the file to any app (a fresh tap is
-  // required by the browser before it opens the phone's share menu)
+  // Phone/tablet: show a sheet so the person can send the file straight to an app
+  // (the browser needs a fresh tap before it opens the phone's share menu)
   pendingPdf = { pdf, file, fileName };
-  document.getElementById('pdfSheetName').textContent = fileName;
-  document.getElementById('pdfSheet').style.display = 'flex';
+  document.getElementById('pdfInlineName').textContent = fileName;
+  const note = document.getElementById('pdfInlineNote');
+  const shareBtn = document.getElementById('pdfShareBtn');
+  if (canShareFile) {
+    note.style.display = 'none';
+    shareBtn.style.display = 'block';
+  } else {
+    note.style.display = 'block';
+    note.textContent = 'این مرورگر ارسال مستقیم فایل را پشتیبانی نمی‌کند. صفحه را در Chrome (اندروید) یا Safari (آیفون) باز کنید. / This browser cannot send files directly. Open this page in Chrome (Android) or Safari (iPhone).';
+    shareBtn.style.display = 'none';
+  }
+  document.getElementById('pdfBtn').style.display = 'none';          // the options take the place of the Download button
+  const box = document.getElementById('pdfInline');
+  box.style.display = 'block';
+  try { box.scrollIntoView({ block: 'nearest' }); } catch (_) {}
 }
 
 let pendingPdf = null;
-function closePdfSheet() { document.getElementById('pdfSheet').style.display = 'none'; }
-document.getElementById('pdfCloseBtn').addEventListener('click', closePdfSheet);
-document.getElementById('pdfSheet').addEventListener('click', (e) => { if (e.target.id === 'pdfSheet') closePdfSheet(); });
+const BUILD_TAG = 'v2026-09-20-e';
+(function () {
+  const a = document.getElementById('buildTag'); if (a) a.textContent = 'Version ' + BUILD_TAG;
+})();
+function closePdfInline() {
+  document.getElementById('pdfInline').style.display = 'none';
+  document.getElementById('pdfBtn').style.display = '';
+}
+document.getElementById('pdfCloseBtn').addEventListener('click', closePdfInline);
 document.getElementById('pdfSaveBtn').addEventListener('click', () => {
   if (pendingPdf) pendingPdf.pdf.save(pendingPdf.fileName);
 });
@@ -3503,6 +3518,7 @@ document.getElementById('pdfShareBtn').addEventListener('click', async () => {
   if (!pendingPdf) return;
   try {
     await navigator.share({ files: [pendingPdf.file], title: pendingPdf.fileName });
+    closePdfInline();
   } catch (e) {
     if (e && e.name !== 'AbortError') {
       console.error(e);
