@@ -625,16 +625,10 @@
       </select>
     </div>
 
-    <button class="print-btn" id="pdfBtn" style="margin-top:8px;">Download PDF</button>
-
-    <div id="pdfInline" style="display:none;">
-      <div id="pdfInlineName" style="font-size:11.5px;color:#7a7462;margin:10px 2px 0;text-align:center;word-break:break-word;"></div>
-      <div id="pdfInlineNote" style="display:none;background:#fff4d6;color:#7a5a00;border-radius:8px;padding:9px;font-size:12px;margin-top:8px;"></div>
-      <button type="button" class="print-btn" id="pdfShareBtn" style="margin-top:8px;background:#25a244;">Send PDF to WhatsApp / Telegram / ... &nbsp;|&nbsp; ارسال</button>
-      <button type="button" class="print-btn" id="pdfSaveBtn" style="margin-top:8px;">Save to phone &nbsp;|&nbsp; ذخیره در گوشی</button>
-      <button type="button" class="print-btn" id="pdfCloseBtn" style="margin-top:8px;background:#eee8d6;color:#4a4638;">Back &nbsp;|&nbsp; بازگشت</button>
-    </div>
-    <button class="print-btn" id="printBtn" style="margin-top:8px;background:#5c4a12;">Print</button>
+    <button type="button" class="print-btn" id="sendBtn" style="margin-top:8px;background:#25a244;">Send PDF to WhatsApp / Telegram / ... &nbsp;|&nbsp; ارسال</button>
+    <button type="button" class="print-btn" id="saveBtn" style="margin-top:8px;">Save PDF to phone &nbsp;|&nbsp; ذخیره در گوشی</button>
+    <button type="button" class="print-btn" id="printBtn" style="margin-top:8px;background:#5c4a12;">Print &nbsp;|&nbsp; پرینت</button>
+    <div id="sendNote" style="display:none;background:#fff4d6;color:#7a5a00;border-radius:8px;padding:9px;font-size:12px;margin-top:8px;">این مرورگر ارسال مستقیم فایل را پشتیبانی نمی‌کند؛ برای ارسال، صفحه را در Chrome (اندروید) یا Safari (آیفون) باز کنید. / This browser cannot send files directly; open the page in Chrome (Android) or Safari (iPhone).</div>
     <div id="buildTag" style="text-align:center;font-size:11px;color:#a59d85;margin-top:12px;"></div>
   </div>
 
@@ -3279,7 +3273,48 @@ function makeQrDataUrl(text) {
   return cv.toDataURL('image/png');
 }
 
+let pendingSend = null;   // a PDF that is ready but the phone needs one more tap to open its share menu
+
+function voucherSignature() {
+  const v = document.getElementById('voucher');
+  const qrOn = document.getElementById('qrToggle') ? document.getElementById('qrToggle').checked : true;
+  return (v ? v.innerText : '') + '|' + currentPageSize() + '|' + qrOn;
+}
+function setPendingSend(p) {
+  pendingSend = p ? Object.assign({ sig: voucherSignature() }, p) : null;
+  const btn = document.getElementById('sendBtn');
+  if (btn) btn.innerHTML = p
+    ? 'PDF ready - tap again to send &nbsp;|&nbsp; آماده است؛ برای ارسال دوباره بزنید'
+    : 'Send PDF to WhatsApp / Telegram / ... &nbsp;|&nbsp; ارسال';
+}
+function setBusy(b) {
+  ['sendBtn', 'saveBtn', 'printBtn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.disabled = b; el.style.opacity = b ? '.6' : ''; }
+  });
+}
+// true = handled (sent or cancelled), false = the phone needs a fresh tap
+async function shareNow(p) {
+  try {
+    await navigator.share({ files: [p.file], title: p.fileName });
+    setPendingSend(null);
+    return true;
+  } catch (e) {
+    if (e && e.name === 'AbortError') { setPendingSend(p); return true; }
+    if (e && (e.name === 'NotAllowedError' || e.name === 'InvalidStateError')) { setPendingSend(p); return false; }
+    throw e;
+  }
+}
+
 async function issueVoucher(mode) {
+  // A PDF was already made and only needs the share menu opened again
+  if (mode === 'send' && pendingSend && pendingSend.sig === voucherSignature()) {
+    try { await shareNow(pendingSend); }
+    catch (e) { console.error(e); alert('ارسال انجام نشد؛ از «ذخیره در گوشی» استفاده کنید. / Sharing failed, please use Save instead.'); }
+    return;
+  }
+  setPendingSend(null);
+
   render();
 
   const staffKey = getStaffKey();
@@ -3294,79 +3329,100 @@ async function issueVoucher(mode) {
   })).filter(g => g.name || g.passport);
 
   const data = {
+    key: staffKey,
+    code: document.getElementById('qrCodeText').textContent.trim(),
+    guests: guests,
+    // Kept for backward compatibility with the current Apps Script column layout
+    name: guests.map(g => g.name).filter(Boolean).join(', '),
+    passport: guests.map(g => g.passport).filter(Boolean).join(', '),
+    check_in: document.getElementById('checkIn').value,
+    check_out: document.getElementById('prevCheckOut').textContent.trim()
+  };
 
-  key: staffKey,
+  const primaryGuestName = (document.querySelector('.guest-name')?.value || '').trim();
+  const safeName = primaryGuestName.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const baseName = safeName ? `${safeName} - Voucher` : 'Voucher';
 
-  code: document.getElementById('qrCodeText').textContent.trim(),
+  setBusy(true);
+  const keepY = window.scrollY || 0;
+  try {
+    // Start building the PDF right away, in parallel with saving to the sheet,
+    // so the phone's share menu can still open from the same tap.
+    let pdfPromise = null;
+    if (mode === 'send' || mode === 'save') {
+      pdfPromise = buildPdf(baseName).then(v => ({ ok: true, v }), e => ({ ok: false, e }));
+    }
 
-  guests: guests,
-
-  // Kept for backward compatibility with the current Apps Script column
-  // layout (joined strings) — remove once the script is updated to use
-  // the `guests` array above.
-  name: guests.map(g => g.name).filter(Boolean).join(', '),
-
-  passport: guests.map(g => g.passport).filter(Boolean).join(', '),
-
-  check_in: document.getElementById('checkIn').value,
-
-  check_out: document.getElementById('prevCheckOut').textContent.trim()
-
-};
-  try{
-    const res=await fetch('https://script.google.com/macros/s/AKfycbxSaBK3-VFmTLfm3-cTeOWCWwAlAOz4zoEFLHZRh28EbErCLjtZjfNNXI4I_jILLrHI/exec',{
-      method:'POST',
-      headers:{
-  'Content-Type':'text/plain;charset=utf-8'
-},
-redirect:'follow',
-body:JSON.stringify(data)
+    const res = await fetch('https://script.google.com/macros/s/AKfycbxSaBK3-VFmTLfm3-cTeOWCWwAlAOz4zoEFLHZRh28EbErCLjtZjfNNXI4I_jILLrHI/exec', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      redirect: 'follow',
+      body: JSON.stringify(data)
     });
-    let result={success:true};
-    try{result=await res.json();}catch(_){}
+    let result = { success: true };
+    try { result = await res.json(); } catch (_) {}
 
-    if(result.success!==true){
-      if(result.message==='Unauthorized'){
-        try{localStorage.removeItem('grStaffKey');}catch(_){}
+    if (result.success !== true) {
+      if (result.message === 'Unauthorized') {
+        try { localStorage.removeItem('grStaffKey'); } catch (_) {}
         alert('کلید دسترسی اشتباه است. دوباره روی دکمه بزنید و کلید درست را وارد کنید.');
-      }else if(result.message==='Too many attempts'){
+      } else if (result.message === 'Too many attempts') {
         alert('تعداد تلاش‌های ناموفق زیاد بود. چند دقیقه بعد دوباره امتحان کنید.');
-      }else{
-        alert('واچر در Google Sheet ذخیره نشد: '+(result.message||''));
+      } else {
+        alert('واچر در Google Sheet ذخیره نشد: ' + (result.message || ''));
       }
       return;
     }
 
-    const originalTitle = document.title;
-    const primaryGuestName = (document.querySelector('.guest-name')?.value || '').trim();
-    const safeName = primaryGuestName
-      .replace(/[\\/:*?"<>|]+/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    document.title = safeName ? `${safeName} - Voucher` : originalTitle;
-
-    if (mode === 'pdf') {
-      const keepY = window.scrollY || 0;
-      try {
-        await makePdf(safeName ? `${safeName} - Voucher` : 'Voucher');
-        window.scrollTo(0, keepY);
-      } catch (e) {
-        console.error(e);
-        alert('ساخت PDF انجام نشد؛ از دکمه Print استفاده کنید. / PDF could not be created, please use Print instead.');
-      }
-    } else {
+    if (mode === 'print') {
+      const originalTitle = document.title;
+      document.title = baseName;
       applyPageLayout();
       window.print();
+      document.title = originalTitle;
+      return;
     }
 
-    document.title = originalTitle;
-
-    if(result.success!==true){console.warn('Sheet response',result);}
-  }catch(e){console.error(e);alert('ارتباط با Google Sheet برقرار نشد.');}
+    const built = await pdfPromise;
+    window.scrollTo(0, keepY);
+    if (!built.ok) {
+      console.error(built.e);
+      alert('ساخت PDF انجام نشد؛ از دکمه پرینت استفاده کنید. / PDF could not be created, please use Print instead.');
+      return;
+    }
+    const p = built.v;
+    if (mode === 'save') {
+      p.pdf.save(p.fileName);
+    } else {
+      await shareNow(p);   // if the phone wants one more tap, the button changes to "tap again to send"
+    }
+  } catch (e) {
+    console.error(e);
+    alert('ارسال یا ساخت فایل با مشکل روبه‌رو شد. / Something went wrong: ' + (e && e.message ? e.message : e));
+  } finally {
+    setBusy(false);
+  }
 }
 
-document.getElementById('pdfBtn').addEventListener('click', () => issueVoucher('pdf'));
+document.getElementById('sendBtn').addEventListener('click', () => issueVoucher('send'));
+document.getElementById('saveBtn').addEventListener('click', () => issueVoucher('save'));
 document.getElementById('printBtn').addEventListener('click', () => issueVoucher('print'));
+
+// The "Send" button only makes sense on browsers that can share files
+(function initSendButton() {
+  const btn = document.getElementById('sendBtn');
+  let ok = false;
+  try {
+    const f = new File(['x'], 'a.pdf', { type: 'application/pdf' });
+    ok = !!(navigator.share && (!navigator.canShare || navigator.canShare({ files: [f] })));
+  } catch (_) { ok = false; }
+  if (!ok) {
+    btn.style.display = 'none';
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (isMobile) document.getElementById('sendNote').style.display = 'block';
+  }
+})();
 
 /* ---------- Paper size (A4 / A5), one-page print and PDF ---------- */
 const PAGE_DIMS = { A4: { w: 210, h: 297 }, A5: { w: 148, h: 210 } };
@@ -3423,8 +3479,8 @@ function blobToDataURL(blob) {
   });
 }
 
-// Builds a real one-page PDF (A4 or A5) and saves / shares it
-async function makePdf(fileBaseName) {
+// Builds a real one-page PDF (A4 or A5) and returns it (does not save or share it)
+async function buildPdf(fileBaseName) {
   if (!window.html2canvas || !window.jspdf) throw new Error('PDF libraries not loaded');
   if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (_) {} }
 
@@ -3470,62 +3526,13 @@ async function makePdf(fileBaseName) {
 
   const fileName = (fileBaseName || 'Voucher') + '.pdf';
   const file = new File([pdf.output('blob')], fileName, { type: 'application/pdf' });
-  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
-    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  let canShareFile = false;
-  try {
-    canShareFile = !!(navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] })));
-  } catch (_) { canShareFile = false; }
-
-  if (!isMobile && !canShareFile) {   // a computer: just download the file
-    pdf.save(fileName);
-    return;
-  }
-  // Phone/tablet: show a sheet so the person can send the file straight to an app
-  // (the browser needs a fresh tap before it opens the phone's share menu)
-  pendingPdf = { pdf, file, fileName };
-  document.getElementById('pdfInlineName').textContent = fileName;
-  const note = document.getElementById('pdfInlineNote');
-  const shareBtn = document.getElementById('pdfShareBtn');
-  if (canShareFile) {
-    note.style.display = 'none';
-    shareBtn.style.display = 'block';
-  } else {
-    note.style.display = 'block';
-    note.textContent = 'این مرورگر ارسال مستقیم فایل را پشتیبانی نمی‌کند. صفحه را در Chrome (اندروید) یا Safari (آیفون) باز کنید. / This browser cannot send files directly. Open this page in Chrome (Android) or Safari (iPhone).';
-    shareBtn.style.display = 'none';
-  }
-  document.getElementById('pdfBtn').style.display = 'none';          // the options take the place of the Download button
-  const box = document.getElementById('pdfInline');
-  box.style.display = 'block';
-  try { box.scrollIntoView({ block: 'nearest' }); } catch (_) {}
+  return { pdf, file, fileName };
 }
 
-let pendingPdf = null;
-const BUILD_TAG = 'v2026-09-20-e';
+const BUILD_TAG = 'v2026-09-20-f';
 (function () {
   const a = document.getElementById('buildTag'); if (a) a.textContent = 'Version ' + BUILD_TAG;
 })();
-function closePdfInline() {
-  document.getElementById('pdfInline').style.display = 'none';
-  document.getElementById('pdfBtn').style.display = '';
-}
-document.getElementById('pdfCloseBtn').addEventListener('click', closePdfInline);
-document.getElementById('pdfSaveBtn').addEventListener('click', () => {
-  if (pendingPdf) pendingPdf.pdf.save(pendingPdf.fileName);
-});
-document.getElementById('pdfShareBtn').addEventListener('click', async () => {
-  if (!pendingPdf) return;
-  try {
-    await navigator.share({ files: [pendingPdf.file], title: pendingPdf.fileName });
-    closePdfInline();
-  } catch (e) {
-    if (e && e.name !== 'AbortError') {
-      console.error(e);
-      alert('ارسال انجام نشد؛ از «ذخیره در گوشی» استفاده کنید. / Sharing failed, please use Save instead.');
-    }
-  }
-});
 
 /* ---- Custom date picker: always Gregorian/English, regardless of OS calendar ---- */
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
