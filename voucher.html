@@ -626,8 +626,9 @@
     </div>
 
     <button type="button" class="print-btn" id="sendBtn" style="margin-top:8px;background:#25a244;">Send PDF to WhatsApp / Telegram / ... &nbsp;|&nbsp; ارسال</button>
-    <button type="button" class="print-btn" id="saveBtn" style="margin-top:8px;">Save PDF to phone &nbsp;|&nbsp; ذخیره در گوشی</button>
+    <button type="button" class="print-btn" id="saveBtn" style="margin-top:8px;">Save PDF on computer &nbsp;|&nbsp; ذخیره در سیستم</button>
     <button type="button" class="print-btn" id="printBtn" style="margin-top:8px;background:#5c4a12;">Print &nbsp;|&nbsp; پرینت</button>
+    <button type="button" class="print-btn" id="newBtn" style="margin-top:18px;background:#eee8d6;color:#4a4638;">New voucher (clear page) &nbsp;|&nbsp; واچر جدید (پاک کردن صفحه)</button>
     <div id="sendNote" style="display:none;background:#fff4d6;color:#7a5a00;border-radius:8px;padding:9px;font-size:12px;margin-top:8px;">این مرورگر ارسال مستقیم فایل را پشتیبانی نمی‌کند؛ برای ارسال، صفحه را در Chrome (اندروید) یا Safari (آیفون) باز کنید. / This browser cannot send files directly; open the page in Chrome (Android) or Safari (iPhone).</div>
     <div id="buildTag" style="text-align:center;font-size:11px;color:#a59d85;margin-top:12px;"></div>
   </div>
@@ -3273,7 +3274,9 @@ function makeQrDataUrl(text) {
   return cv.toDataURL('image/png');
 }
 
-let pendingSend = null;   // a PDF that is ready but the phone needs one more tap to open its share menu
+let pendingSend = null;
+let lastRegisteredSig = null;   // what was registered in the sheet most recently
+let formDirty = false;          // did the person type anything since the page opened   // a PDF that is ready but the phone needs one more tap to open its share menu
 
 function voucherSignature() {
   const v = document.getElementById('voucher');
@@ -3310,7 +3313,7 @@ async function issueVoucher(mode) {
   // A PDF was already made and only needs the share menu opened again
   if (mode === 'send' && pendingSend && pendingSend.sig === voucherSignature()) {
     try { await shareNow(pendingSend); }
-    catch (e) { console.error(e); alert('ارسال انجام نشد؛ از «ذخیره در گوشی» استفاده کنید. / Sharing failed, please use Save instead.'); }
+    catch (e) { console.error(e); alert('ارسال انجام نشد؛ دوباره امتحان کنید. / Sharing failed, please try again.'); }
     return;
   }
   setPendingSend(null);
@@ -3374,6 +3377,8 @@ async function issueVoucher(mode) {
       return;
     }
 
+    lastRegisteredSig = voucherSignature();
+
     if (mode === 'print') {
       const originalTitle = document.title;
       document.title = baseName;
@@ -3407,6 +3412,22 @@ async function issueVoucher(mode) {
 document.getElementById('sendBtn').addEventListener('click', () => issueVoucher('send'));
 document.getElementById('saveBtn').addEventListener('click', () => issueVoucher('save'));
 document.getElementById('printBtn').addEventListener('click', () => issueVoucher('print'));
+
+// Clear the page for a new voucher (a fresh load of the same page: every field goes back to its start value)
+(function () {
+  const panel = document.querySelector('.form-panel');
+  if (panel) {
+    panel.addEventListener('input', () => { formDirty = true; });
+    panel.addEventListener('change', () => { formDirty = true; });
+  }
+  document.getElementById('newBtn').addEventListener('click', () => {
+    const registered = lastRegisteredSig !== null && lastRegisteredSig === voucherSignature();
+    if (formDirty && !registered) {
+      if (!confirm('این واچر هنوز ثبت نشده است. صفحه پاک شود؟ / This voucher is not registered yet. Clear the page anyway?')) return;
+    }
+    window.location.replace(window.location.pathname);
+  });
+})();
 
 // The "Send" button only makes sense on browsers that can share files
 (function initSendButton() {
@@ -3529,7 +3550,7 @@ async function buildPdf(fileBaseName) {
   return { pdf, file, fileName };
 }
 
-const BUILD_TAG = 'v2026-09-20-f';
+const BUILD_TAG = 'v2026-09-20-g';
 (function () {
   const a = document.getElementById('buildTag'); if (a) a.textContent = 'Version ' + BUILD_TAG;
 })();
