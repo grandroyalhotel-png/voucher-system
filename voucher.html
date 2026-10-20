@@ -132,6 +132,35 @@
   }
   .add-btn:hover{ background:#f7edd6; }
 
+  .ocr-row{
+    grid-column: 1 / -1;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin:-2px 0 6px;
+  }
+  .ocr-btn{
+    flex:0 0 auto;
+    padding:6px 10px;
+    border:1px solid var(--gold);
+    background:#fdf9ee;
+    color:var(--gold-deep);
+    border-radius:6px;
+    font-family:inherit;
+    font-size:11.5px;
+    font-weight:600;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .ocr-btn:hover{ background:#f7edd6; }
+  .ocr-btn:disabled{ opacity:.6; cursor:default; }
+  .ocr-status{
+    flex:1 1 auto;
+    font-size:10.5px;
+    color:#7a7462;
+    line-height:1.35;
+  }
+
   .room-grid{
     display:grid;
     grid-template-columns: 1fr 28px 54px 28px;
@@ -2989,6 +3018,263 @@ var qrcode = function() {
 
 </script>
 <script>
+/* ---------- Passport photo -> auto-fill (MRZ OCR) ---------- */
+
+function findMrzLines(rawText) {
+  const lines = rawText
+    .toUpperCase()
+    .split(/\r?\n/)
+    .map(l => l.replace(/[^A-Z0-9<]/g, ''))
+    .filter(l => l.length >= 25);
+
+  const candidates = lines.filter(l => {
+    const chevrons = (l.match(/</g) || []).length;
+    return chevrons >= 3 && l.length >= 28 && l.length <= 46;
+  });
+
+  function pad44(l) { return (l + '<'.repeat(44)).slice(0, 44); }
+
+  for (let i = 0; i < candidates.length; i++) {
+    if (/^P[A-Z<]/.test(candidates[i])) {
+      for (let j = i + 1; j < candidates.length; j++) {
+        if (/^[A-Z0-9<]{9}/.test(candidates[j])) {
+          return [pad44(candidates[i]), pad44(candidates[j])];
+        }
+      }
+    }
+  }
+  if (candidates.length >= 2) {
+    const sorted = [...candidates].sort((a, b) => b.length - a.length).slice(0, 2);
+    const ordered = candidates.filter(c => sorted.includes(c)).slice(0, 2);
+    if (ordered.length === 2) return [pad44(ordered[0]), pad44(ordered[1])];
+  }
+  return null;
+}
+
+function parseMrzNames(line1) {
+  const body = line1.slice(5);
+  const parts = body.split('<<');
+  const surname = (parts[0] || '').replace(/</g, ' ').trim();
+  const given = (parts[1] || '').replace(/</g, ' ').trim();
+  return { surname, given };
+}
+
+function parseMrz(rawText) {
+  const pair = findMrzLines(rawText);
+  if (!pair) return null;
+  const [line1, line2] = pair;
+  const { surname, given } = parseMrzNames(line1);
+  const passportNo = line2.slice(0, 9).replace(/</g, '').trim();
+  const sexChar = line2[20];
+  if (!surname && !given && !passportNo) return null;
+  const fullName = [given, surname].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+  return {
+    fullName,
+    passportNo,
+    sex: sexChar === 'M' ? 'M' : (sexChar === 'F' ? 'F' : '')
+  };
+}
+
+function mrzTitleCase(s) {
+  return s.toLowerCase().replace(/\b\p{L}/gu, c => c.toUpperCase());
+}
+
+// Reads the plain printed bio-data fields ("Surname: ...", "Given name(s): ...",
+// "Passport No: ...") that sit above the MRZ strip. These use a normal printed font,
+// so OCR is far more reliable on them than on the dot-matrix MRZ font - this is the
+// main source for the guest's name; the MRZ strip is only a fallback for it.
+function extractViz(rawText) {
+  const up = rawText.toUpperCase().replace(/\r/g, '');
+  const stopWords = /(NATIONALITY|DATE OF BIRTH|\bSEX\b|PLACE OF BIRTH|PERSONAL NO|AUTHORITY|DATE OF ISSUE|DATE OF EXPIRY|PASSPORT NO|\bTYPE\b|COUNTRY CODE|GIVEN|SURNAME|\n)/;
+
+  function cleanCapture(rest) {
+    const stop = rest.search(stopWords);
+    if (stop !== -1) rest = rest.slice(0, stop);
+    rest = rest.split('\n')[0];
+    rest = rest.replace(/[^A-Z\- ]/g, ' ').replace(/\s+/g, ' ').trim();
+    return rest.split(' ').slice(0, 4).join(' ');
+  }
+
+  // Only trust a field when the real printed label was actually matched; a captured
+  // string that turns out to be boilerplate (a seal, "place of issue", etc.) is
+  // discarded rather than risk filling the guest's name with the wrong text.
+  const JUNK_WORDS = new Set(['OF','ISSUE','ISSUING','ISSUED','AUTHORITY','DATE','PASSPORT',
+    'REPUBLIC','ISLAMIC','MINISTRY','DIRECTOR','GENERAL','AFFAIRS','PLACE','TYPE','CODE',
+    'NATIONALITY','BIRTH','EXPIRY','SEX','PERSONAL','NO','COUNTRY','POSITION','SIGNATURE',
+    'HOLDER','FOREIGN','OFFICE','SEAL','STAMP','GOVERNMENT','DEPARTMENT','IMMIGRATION']);
+  function isUsableName(s) {
+    if (!s) return false;
+    const words = s.split(' ').filter(Boolean);
+    if (!words.length || words.length > 4) return false;
+    return !words.some(w => JUNK_WORDS.has(w));
+  }
+
+  let surname = '';
+  const sm = up.match(/SURNAME[:\s]*/);
+  if (sm) {
+    const cap = cleanCapture(up.slice(sm.index + sm[0].length));
+    if (isUsableName(cap)) surname = cap;
+  }
+
+  let given = '';
+  const gm = up.match(/GIVEN\s*NAME[S()]*[:\s]*/);
+  if (gm) {
+    const cap = cleanCapture(up.slice(gm.index + gm[0].length));
+    if (isUsableName(cap)) given = cap;
+  }
+
+  const pm = up.match(/PASSPORT\s*NO\.?[:\s]*([A-Z0-9]{6,12})/);
+  const passportNo = pm ? pm[1] : '';
+
+  if (!surname && !given && !passportNo) return null;
+  return { surname, given, passportNo };
+}
+
+// Safety net for a name that still came from the MRZ strip. The MRZ padding
+// ("<<<<...") is sometimes misread as a run of real letters instead of being
+// dropped, producing noise stuck directly onto the real name (e.g. "TORABCSCLCL").
+// That noise is low-variety (a handful of visually-confused letters repeating),
+// so for each word we look, from the end, for the longest low-diversity tail
+// (<=3 distinct letters within at least 4 characters) and cut it off; a short
+// word, or one where no such tail exists, is left untouched.
+function stripMrzNoiseTail(word) {
+  const n = word.length;
+  if (n <= 9) return word;              // too short to risk cutting a real name
+  for (let i = 4; i <= n - 6; i++) {
+    const tail = word.slice(i);
+    if (new Set(tail).size <= 3) return word.slice(0, i);
+  }
+  return word;
+}
+function cleanMrzNameNoise(s) {
+  return s
+    .split(' ')
+    .map(w => stripMrzNoiseTail(w.replace(/([A-Z])\1{2,}/g, '$1')))
+    .filter(w => w.length >= 2 && w.length <= 20)
+    .join(' ');
+}
+
+// Loads the Tesseract.js library (once) and keeps a single OCR worker ready for reuse.
+let _tesseractLoad = null;
+function loadTesseractLib() {
+  if (_tesseractLoad) return _tesseractLoad;
+  _tesseractLoad = new Promise((resolve, reject) => {
+    if (window.Tesseract) { resolve(window.Tesseract); return; }
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+    s.onload = () => resolve(window.Tesseract);
+    s.onerror = () => reject(new Error('Could not load the OCR library'));
+    document.head.appendChild(s);
+  });
+  return _tesseractLoad;
+}
+
+let _ocrWorker = null;
+async function getOcrWorker() {
+  if (_ocrWorker) return _ocrWorker;
+  const Tesseract = await loadTesseractLib();
+  const worker = await Tesseract.createWorker('eng');
+  // The MRZ uses only these characters, so restricting the whitelist greatly improves accuracy.
+  await worker.setParameters({ tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<' });
+  _ocrWorker = worker;
+  return worker;
+}
+
+function loadBitmapFromFile(file) {
+  if (window.createImageBitmap) {
+    return createImageBitmap(file, { imageOrientation: 'from-image' }).catch(() => createImageBitmap(file));
+  }
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+function drawToCanvas(bitmap, maxDim) {
+  const bw = bitmap.width || bitmap.naturalWidth;
+  const bh = bitmap.height || bitmap.naturalHeight;
+  const scale = Math.min(1, maxDim / Math.max(bw, bh));
+  const w = Math.max(1, Math.round(bw * scale));
+  const h = Math.max(1, Math.round(bh * scale));
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  cv.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+  return cv;
+}
+
+function cropBottom(canvas, fraction) {
+  const h = Math.round(canvas.height * fraction);
+  const cv = document.createElement('canvas');
+  cv.width = canvas.width;
+  cv.height = h;
+  cv.getContext('2d').drawImage(canvas, 0, canvas.height - h, canvas.width, h, 0, 0, canvas.width, h);
+  return cv;
+}
+
+// Reads a passport photo and fills the guest's name / passport number fields.
+async function scanPassportPhoto(rowEl, file) {
+  const statusEl = rowEl.querySelector('.ocr-status');
+  const nameInp = rowEl.querySelector('.guest-name');
+  const idInp = rowEl.querySelector('.guest-id');
+  const setStatus = (t) => { if (statusEl) statusEl.textContent = t; };
+
+  setStatus('در حال خواندن عکس... / Reading photo...');
+  try {
+    const bitmap = await loadBitmapFromFile(file);
+    const full = drawToCanvas(bitmap, 1600);
+    const worker = await getOcrWorker();
+
+    // Pass 1: the MRZ strip, restricted to its own character set - very reliable for
+    // the passport number (and sex marker), less so for the name (see cleanMrzNameNoise).
+    await worker.setParameters({ tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<' });
+    const bottom = cropBottom(full, 0.4);
+    let mrzText = (await worker.recognize(bottom)).data.text;
+    let mrz = parseMrz(mrzText);
+    if (!mrz) {
+      mrzText = (await worker.recognize(full)).data.text;
+      mrz = parseMrz(mrzText);
+    }
+
+    // Pass 2: the printed "Surname:" / "Given name(s):" / "Passport No:" fields -
+    // plain font, so this is tried first for the name.
+    await worker.setParameters({ tessedit_char_whitelist: '' });
+    const vizText = (await worker.recognize(full)).data.text;
+    const viz = extractViz(vizText);
+    // restore the restricted whitelist so the next scan's MRZ pass starts clean
+    await worker.setParameters({ tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<' });
+
+    const passportNo = (mrz && mrz.passportNo) || (viz && viz.passportNo) || '';
+    const sex = mrz ? mrz.sex : '';
+
+    let fullName = '';
+    if (viz && (viz.given || viz.surname)) {
+      fullName = [viz.given, viz.surname].filter(Boolean).map(mrzTitleCase).join(' ');
+    } else if (mrz && mrz.fullName) {
+      fullName = mrzTitleCase(cleanMrzNameNoise(mrz.fullName));
+    }
+
+    if (!fullName && !passportNo) {
+      setStatus('❌ متن پاسپورت خوانده نشد؛ عکس واضح‌تری بگیرید یا دستی وارد کنید. / Could not read it — try a clearer photo, or enter manually.');
+      return;
+    }
+
+    if (fullName) {
+      const prefix = sex === 'M' ? 'Mr. ' : (sex === 'F' ? 'Ms. ' : '');
+      nameInp.value = prefix + fullName;
+    }
+    if (passportNo) idInp.value = passportNo;
+    nameInp.dispatchEvent(new Event('input', { bubbles: true }));
+    idInp.dispatchEvent(new Event('input', { bubbles: true }));
+
+    setStatus('✅ خوانده شد — لطفاً قبل از ثبت بررسی کنید. / Read — please double-check before saving.');
+  } catch (e) {
+    console.error('Passport OCR failed:', e);
+    setStatus('❌ خواندن عکس با مشکل مواجه شد؛ لطفاً دستی وارد کنید. / Reading the photo failed — please enter manually.');
+  }
+}
+
 let guestCount = 0;
 const guestListEl = document.getElementById('guestList');
 
@@ -2997,6 +3283,11 @@ function addGuestRow(name = '', id = '') {
   const row = document.createElement('div');
   row.className = 'guest-row-wrap';
   row.innerHTML = `
+    <div class="ocr-row">
+      <button type="button" class="ocr-btn">📷 Scan passport photo / خواندن از عکس</button>
+      <span class="ocr-status"></span>
+    </div>
+    <input type="file" accept="image/*" capture="environment" class="ocr-file-input" style="display:none;">
     <div class="guest-row">
       <input placeholder="Full guest name" class="guest-name" value="${name}">
       <input placeholder="Passport/ID number" class="guest-id" value="${id}">
@@ -3006,6 +3297,17 @@ function addGuestRow(name = '', id = '') {
   row.querySelector('.remove-guest').addEventListener('click', () => {
     row.remove();
     render();
+  });
+  const ocrBtn = row.querySelector('.ocr-btn');
+  const ocrFileInput = row.querySelector('.ocr-file-input');
+  ocrBtn.addEventListener('click', () => ocrFileInput.click());
+  ocrFileInput.addEventListener('change', async () => {
+    const file = ocrFileInput.files && ocrFileInput.files[0];
+    ocrFileInput.value = '';
+    if (!file) return;
+    ocrBtn.disabled = true;
+    try { await scanPassportPhoto(row, file); }
+    finally { ocrBtn.disabled = false; }
   });
   row.querySelectorAll('input').forEach(inp => {
     inp.addEventListener('input', () => {
@@ -3550,7 +3852,7 @@ async function buildPdf(fileBaseName) {
   return { pdf, file, fileName };
 }
 
-const BUILD_TAG = 'v2026-09-20-g';
+const BUILD_TAG = 'v2026-10-20-b';
 (function () {
   const a = document.getElementById('buildTag'); if (a) a.textContent = 'Version ' + BUILD_TAG;
 })();
