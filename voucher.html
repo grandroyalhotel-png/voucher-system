@@ -3287,7 +3287,7 @@ function addGuestRow(name = '', id = '') {
       <button type="button" class="ocr-btn">📷 Scan passport photo / خواندن از عکس</button>
       <span class="ocr-status"></span>
     </div>
-    <input type="file" accept="image/*" capture="environment" class="ocr-file-input" style="display:none;">
+    <input type="file" accept="image/*" class="ocr-file-input" style="display:none;">
     <div class="guest-row">
       <input placeholder="Full guest name" class="guest-name" value="${name}">
       <input placeholder="Passport/ID number" class="guest-id" value="${id}">
@@ -3852,7 +3852,7 @@ async function buildPdf(fileBaseName) {
   return { pdf, file, fileName };
 }
 
-const BUILD_TAG = 'v2026-10-20-b';
+const BUILD_TAG = 'v2026-10-20-c';
 (function () {
   const a = document.getElementById('buildTag'); if (a) a.textContent = 'Version ' + BUILD_TAG;
 })();
