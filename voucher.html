@@ -3576,9 +3576,9 @@ function makeQrDataUrl(text) {
   return cv.toDataURL('image/png');
 }
 
-let pendingSend = null;
+let pendingSend = null;         // a PDF that is ready but the phone needs one more tap to open its share menu
 let lastRegisteredSig = null;   // what was registered in the sheet most recently
-let formDirty = false;          // did the person type anything since the page opened   // a PDF that is ready but the phone needs one more tap to open its share menu
+let formDirty = false;          // did the person type anything since the page opened
 
 function voucherSignature() {
   const v = document.getElementById('voucher');
